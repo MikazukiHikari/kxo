@@ -116,7 +116,9 @@ int main(int argc, char *argv[])
         } else if (read_attr && FD_ISSET(device_fd, &readset)) {
             FD_CLR(device_fd, &readset);
             printf("\033[H\033[J"); /* ASCII escape code to clear the screen */
-            read(device_fd, display_buf, DRAWBUFFER_SIZE);
+
+            ssize_t bytes_read = read(device_fd, display_buf, DRAWBUFFER_SIZE);
+            display_buf[bytes_read] = '\0';
             printf("%s", display_buf);
         }
     }

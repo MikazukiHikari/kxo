@@ -431,6 +431,7 @@ static int kxo_release(struct inode *inode, struct file *filp)
     pr_debug("kxo: %s\n", __func__);
     if (atomic_dec_and_test(&open_cnt)) {
         del_timer_sync(&timer);
+        attr_obj.end = '0';
         flush_workqueue(kxo_workqueue);
         fast_buf_clear();
     }
