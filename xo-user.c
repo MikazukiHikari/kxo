@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/select.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "game.h"
@@ -98,6 +99,12 @@ static int draw_board(const char *table)
         printf("\n");
     }
 
+    time_t now = time(NULL);
+    const struct tm *tm_now = localtime(&now);
+    char time_str[64];
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_now);
+
+    printf("\nTime: %s\n", time_str);
 
     return 0;
 }
