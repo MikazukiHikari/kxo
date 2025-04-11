@@ -1,9 +1,11 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/select.h>
 #include <termios.h>
 #include <time.h>
@@ -14,6 +16,12 @@
 #define XO_STATUS_FILE "/sys/module/kxo/initstate"
 #define XO_DEVICE_FILE "/dev/kxo"
 #define XO_DEVICE_ATTR_FILE "/sys/class/kxo/kxo/kxo_state"
+
+#define IOCTL_READ_SIZE 0
+#define IOCTL_READ_LIST 1
+#define IOCTL_READ_INDEX 2
+#define IOCTL_READ_LIST_MOVES 3
+#define MAX_LOGS 16
 
 static bool status_check(void)
 {
@@ -109,6 +117,51 @@ static int draw_board(const char *table)
     return 0;
 }
 
+void print_record(uint64_t record, uint64_t record1)
+{
+    printf("Moves: ");
+    for (int i = 0; i < record1; i += 4) {
+        unsigned int move = (record >> i) & 15;
+        printf("%c%u", 'A' + (move >> 2), (move & 3) + 1);
+        if (i != record1 - 4)
+            printf(" -> ");
+    }
+    printf("\n");
+}
+
+void show_record(int device_fd)
+{
+    int size = ioctl(device_fd, IOCTL_READ_SIZE, 0);
+    if (size < 0) {
+        printf("Read board record fail");
+        return;
+    }
+    int index = size % MAX_LOGS;
+    if (size > MAX_LOGS - 1) {
+        size = MAX_LOGS - 1;
+    }
+    for (int i = index - 1; i >= index - size; i--) {
+        uint64_t record;
+        int i_16;
+        i_16 = i;
+        if (i < 0) {
+            i_16 += MAX_LOGS;
+        }
+        if (ioctl(device_fd, (((unsigned) i_16) << 2) | IOCTL_READ_LIST,
+                  &record)) {
+            printf("Read board record fail1");
+            return;
+        }
+        uint64_t record1;
+        if (ioctl(device_fd, (((unsigned) i_16) << 2) | IOCTL_READ_LIST_MOVES,
+                  &record1)) {
+            printf("Read board record fail3");
+            return;
+        }
+        print_record(record, record1);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     if (!status_check())
@@ -149,6 +202,8 @@ int main(int argc, char *argv[])
     }
 
     raw_mode_disable();
+
+    show_record(device_fd);
     fcntl(STDIN_FILENO, F_SETFL, flags);
 
     close(device_fd);

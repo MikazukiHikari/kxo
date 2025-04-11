@@ -12,6 +12,7 @@
 #include <linux/workqueue.h>
 
 #include "game.h"
+#include "log.h"
 #include "mcts.h"
 #include "negamax.h"
 
@@ -29,6 +30,11 @@ MODULE_DESCRIPTION("In-kernel Tic-Tac-Toe game engine");
 #define DEV_NAME "kxo"
 
 #define NR_KMLDRV 1
+
+#define IOCTL_READ_SIZE 0
+#define IOCTL_READ_LIST 1
+#define IOCTL_READ_INDEX 2
+#define IOCTL_READ_LIST_MOVES 3
 
 static int delay = 100; /* time (in ms) to generate an event */
 
@@ -193,6 +199,8 @@ static void ai_one_work_func(struct work_struct *w)
     WRITE_ONCE(move, mcts(table, 'O'));
 
     smp_mb();
+    log_board_update(move);
+    // pr_info("Move: %d\n", move);
 
     if (move != -1)
         WRITE_ONCE(table[move], 'O');
@@ -227,6 +235,8 @@ static void ai_two_work_func(struct work_struct *w)
     WRITE_ONCE(move, negamax_predict(table, 'X').move);
 
     smp_mb();
+    log_board_update(move);
+    // pr_info("Move: %d\n", move);
 
     if (move != -1)
         WRITE_ONCE(table[move], 'X');
@@ -325,6 +335,7 @@ static void timer_handler(struct timer_list *__timer)
         ai_game();
         mod_timer(&timer, jiffies + msecs_to_jiffies(delay));
     } else {
+        log_append_board();
         read_lock(&attr_obj.lock);
         if (attr_obj.display == '1') {
             int cpu = get_cpu();
@@ -424,12 +435,41 @@ static int kxo_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
+static long kxo_ioctl(struct file *flip, unsigned int cmd, unsigned long arg)
+{
+    int ret;
+    switch (cmd & 3) {
+    case IOCTL_READ_SIZE:
+        ret = log_get_size();
+        pr_info("kxo_ioctl: the size is %d\n", ret);
+        break;
+    case IOCTL_READ_LIST:
+        uint64_t record = log_get_board(cmd >> 2);
+        ret = copy_to_user((void *) arg, &record, 8);
+        pr_info("kxo_ioctl: read list\n");
+        break;
+    case IOCTL_READ_INDEX:
+        ret = log_get_index();
+        pr_info("kxo_ioctl: the index is %d\n", ret);
+        break;
+    case IOCTL_READ_LIST_MOVES:
+        uint64_t record1 = log_get_board_moves(cmd >> 2);
+        ret = copy_to_user((void *) arg, &record1, 8);
+        pr_info("kxo_ioctl: read list_moves\n");
+        break;
+    default:
+        ret = -ENOTTY;
+    }
+    return ret;
+}
+
 static const struct file_operations kxo_fops = {
     .read = kxo_read,
     .llseek = no_llseek,
     .open = kxo_open,
     .release = kxo_release,
     .owner = THIS_MODULE,
+    .unlocked_ioctl = kxo_ioctl,
 };
 
 static int __init kxo_init(void)
@@ -497,6 +537,7 @@ static int __init kxo_init(void)
 
     negamax_init();
     mcts_init();
+    log_init();
     memset(table, ' ', N_GRIDS);
     turn = 'O';
     finish = 1;
